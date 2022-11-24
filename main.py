@@ -1,6 +1,7 @@
 import os
 import sys
 from datetime import datetime
+from typing import BinaryIO
 
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
@@ -10,7 +11,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 load_dotenv()
 
-COLON = '\U0000A789'
 BOT_TOKEN = os.getenv('TOKEN')
 BOTS_COMMAND = [
     '/start', '/help',
@@ -25,8 +25,27 @@ def check_tokens() -> bool:
     return all([BOT_TOKEN])
 
 
-async def save_user_foto(user_id):
-    filename = datetime.now().strftime(f"%m-%d-%Y_%H-%M")   #  верни бля двоеточие во времени!!!!
+def add_text_to_image(file_name: str, text: str) -> BinaryIO:
+    image = Image.open(file_name)
+    font = ImageFont.truetype('Lobster-Regular.ttf', size=45)
+    draw = ImageDraw.Draw(image)
+    width_image, height_image = image.size
+    width_text, height_text = draw.textsize(text, font=font)
+    draw.text(
+        ((width_image - width_text) / 2 + 1, ((height_image / 10) * 9) + 1),
+        text,
+        fill='#fffcfe',
+        font=font,
+        stroke_width=2,
+        stroke_fill='#030203'
+    )
+    image.save(file_name)
+    photo = open(file_name, 'rb')
+    return photo
+
+
+async def save_user_foto(user_id: int, text: str) -> None:
+    filename = datetime.now().strftime(f"%m-%d-%Y_%H-%M")
     user_profile_photo = await dp.bot.get_user_profile_photos(user_id)
     file_name = f"./media/{filename}_{user_id}.jpg"
     os.makedirs(os.path.dirname('./media/'), exist_ok=True)
@@ -34,23 +53,7 @@ async def save_user_foto(user_id):
         await user_profile_photo.photos[0][-1].download(
             destination_file=file_name
         )
-    await add_text_to_image(file_name, user_id)
-
-
-async def add_text_to_image(file_name, user_id):
-    default_image = Image.open(file_name)
-    font = ImageFont.truetype('Lobster-Regular.ttf', size=45)
-    final_image = ImageDraw.Draw(default_image)
-    final_image.text(
-        (60, 550),
-        'Фоточка, а ней красоточка!',
-        fill='#fffcfe',
-        font=font,
-        stroke_width=2,
-        stroke_fill='#030203'
-    )
-    default_image.save(file_name)
-    photo = open(file_name, 'rb')
+    photo = add_text_to_image(file_name, text)
     await bot.send_photo(chat_id=user_id, photo=photo)
 
 
@@ -72,7 +75,8 @@ async def give_help(message: types.Message):
 async def start_command(message: types.Message):
     """Функция реакции на команду /start."""
     user_id = message.from_user.id
-    await save_user_foto(user_id)
+    text = 'Хоба шо могу!'
+    await save_user_foto(user_id, text)
     me = await bot.get_me()
     await message.reply(f'\U0001F916 Привет, {message.from_user.full_name}, '
                         f'меня зовут {me.full_name}!\n'
