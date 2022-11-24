@@ -2,12 +2,18 @@ import os
 import sys
 from datetime import datetime
 from typing import BinaryIO
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
+from PIL import Image, ImageDraw, ImageFont
 from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
+from aiogram.dispatcher import Dispatcher, FSMContext
+from aiogram.dispatcher.filters.state import StatesGroup, State
 from aiogram.utils import executor
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw, ImageFont
+from aiogram.types import (
+    ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton, callback_query
+)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 load_dotenv()
 
@@ -17,7 +23,11 @@ BOTS_COMMAND = [
 ]
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher(bot, storage=MemoryStorage())
+
+
+class UploadPhotoForm(StatesGroup):
+    photo = State()
 
 
 def check_tokens() -> bool:
@@ -44,7 +54,11 @@ def add_text_to_image(file_name: str, text: str) -> BinaryIO:
     return photo
 
 
-async def save_user_foto(user_id: int, text: str) -> None:
+def get_random_text() -> str:
+    pass
+
+
+async def save_user_start_foto(user_id: int, text: str) -> None:
     filename = datetime.now().strftime(f"%m-%d-%Y_%H-%M")
     user_profile_photo = await dp.bot.get_user_profile_photos(user_id)
     file_name = f"./media/{filename}_{user_id}.jpg"
@@ -53,6 +67,16 @@ async def save_user_foto(user_id: int, text: str) -> None:
         await user_profile_photo.photos[0][-1].download(
             destination_file=file_name
         )
+    photo = add_text_to_image(file_name, text)
+    await bot.send_photo(chat_id=user_id, photo=photo)
+
+
+async def save_user_foto(user_id: int, text: str, photo) -> None:
+    await photo.download(
+        destination_file='C:/Antony/py_projects/qr_code_bot/photos/ggg.jpg')
+    filename = datetime.now().strftime(f"%m-%d-%Y_%H-%M")
+    file_name = f"./media/{filename}_{user_id}.jpg"
+    os.makedirs(os.path.dirname('./media/'), exist_ok=True)
     photo = add_text_to_image(file_name, text)
     await bot.send_photo(chat_id=user_id, photo=photo)
 
@@ -75,12 +99,50 @@ async def give_help(message: types.Message):
 async def start_command(message: types.Message):
     """Функция реакции на команду /start."""
     user_id = message.from_user.id
-    text = 'Хоба шо могу!'
-    await save_user_foto(user_id, text)
+    text = 'Хоба шо могу! =)'
+    bot_keyboard = ReplyKeyboardMarkup(
+        row_width=1,
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    download_button = KeyboardButton(
+        text="Загрузить своё фото",
+        callback_data="load_own_photo"
+    )
+    bot_keyboard.add(download_button)
     me = await bot.get_me()
-    await message.reply(f'\U0001F916 Привет, {message.from_user.full_name}, '
-                        f'меня зовут {me.full_name}!\n'
-                        f'Я делаю подписи к фото =)')
+    await save_user_start_foto(user_id, text)
+    await message.reply(
+        f'\U0001F916 Привет, {message.from_user.full_name}, '
+        f'меня зовут {me.full_name}!\n'
+        f'Я делаю подписи к фото =)', reply_markup=bot_keyboard,
+    )
+
+
+@dp.callback_query_handler(text='load_own_photo')
+async def make_user_photo(callback_query: types.CallbackQuery):
+    await bot.answer_callback_query(
+        callback_query.id,
+        f'Отправьте Ваше изображение!'
+    )
+    await UploadPhotoForm.photo.set()
+
+
+@dp.message_handler(
+    lambda message: message.photo is None, state=UploadPhotoForm.photo
+)
+async def process_photo_invalid(message: types.Message):
+    return await message.reply("Изображение не найдено в сообщении!")
+
+
+@dp.message_handler(
+    lambda message: message.photo is not None, state=UploadPhotoForm.photo
+)
+async def process_photo(message: types.Message, state: FSMContext):
+    photo = message.photo[-1]
+    await save_user_foto(callback_query.from_user.id, 'hubabuba', photo)
+    await bot.send_message(callback_query.from_user.id, "Фотография успешно загружена!")
+    await state.finish()
 
 
 if __name__ == '__main__':
