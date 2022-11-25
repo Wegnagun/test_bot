@@ -9,6 +9,8 @@ from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher, FSMContext
 from aiogram.dispatcher.filters.state import StatesGroup, State
 from aiogram.utils import executor
+from aiogram.utils.callback_data import CallbackData
+from aiogram.dispatcher.filters import Text
 from dotenv import load_dotenv
 from aiogram.types import (
     ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton, callback_query
@@ -19,7 +21,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv('TOKEN')
 BOTS_COMMAND = [
-    '/start', '/help',
+    '/start', '/help', 'Загрузить своё фото'
 ]
 
 bot = Bot(token=BOT_TOKEN)
@@ -28,6 +30,16 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 
 class UploadPhotoForm(StatesGroup):
     photo = State()
+
+
+@dp.message_handler(state='*', commands='cancel')
+@dp.message_handler(Text(equals='cancel', ignore_case=True), state='*')
+async def cancel_handler(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None:
+        return
+    await state.finish()
+    await message.reply('Отменено.', reply_markup=types.ReplyKeyboardRemove())
 
 
 def check_tokens() -> bool:
@@ -100,16 +112,16 @@ async def start_command(message: types.Message):
     """Функция реакции на команду /start."""
     user_id = message.from_user.id
     text = 'Хоба шо могу! =)'
-    bot_keyboard = ReplyKeyboardMarkup(
+    bot_keyboard = InlineKeyboardMarkup(
         row_width=1,
         resize_keyboard=True,
         one_time_keyboard=True
     )
-    download_button = KeyboardButton(
+    upload_button = InlineKeyboardButton(
         text="Загрузить своё фото",
-        callback_data="load_own_photo"
+        callback_data='upload_image'
     )
-    bot_keyboard.add(download_button)
+    bot_keyboard.add(upload_button)
     me = await bot.get_me()
     await save_user_start_foto(user_id, text)
     await message.reply(
@@ -119,30 +131,24 @@ async def start_command(message: types.Message):
     )
 
 
-@dp.callback_query_handler(text='load_own_photo')
-async def make_user_photo(callback_query: types.CallbackQuery):
-    await bot.answer_callback_query(
-        callback_query.id,
-        f'Отправьте Ваше изображение!'
+@dp.callback_query_handler(lambda c: c.data == 'upload_image')
+async def process_photo(callback_query: types.CallbackQuery):
+    # photo = message.photo[-1]
+    # await save_user_foto(callback_query.from_user.id, 'hubabuba', photo)
+    await bot.send_message(
+        callback_query.from_user.id, "Жду Ваше изображение!"
     )
     await UploadPhotoForm.photo.set()
 
 
-@dp.message_handler(
-    lambda message: message.photo is None, state=UploadPhotoForm.photo
-)
-async def process_photo_invalid(message: types.Message):
-    return await message.reply("Изображение не найдено в сообщении!")
+@dp.message_handler(lambda message: message.photo is None, state=UploadPhotoForm.photo)
+async def process_photo_invalid(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    await bot.send_message(callback_query.from_user.id, "Фотография не найдена в сообщении!")
 
 
-@dp.message_handler(
-    lambda message: message.photo is not None, state=UploadPhotoForm.photo
-)
-async def process_photo(message: types.Message, state: FSMContext):
-    photo = message.photo[-1]
-    await save_user_foto(callback_query.from_user.id, 'hubabuba', photo)
+@dp.message_handler(lambda message: message.photo is not None, state=UploadPhotoForm.photo)
+async def process_photo(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     await bot.send_message(callback_query.from_user.id, "Фотография успешно загружена!")
-    await state.finish()
 
 
 if __name__ == '__main__':
